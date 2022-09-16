@@ -1,0 +1,29 @@
+/* Some custom edition to bootstrat styling */
+
+.container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-top: 30px;
+}
+
+.result-label {
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+
+.alert-custom {
+    width: 170px;
+    height: 30px;
+    padding-top: 3px !important;
+    top: 5px;
+    right: -45px;
+    font-size: smaller;    
+ }
+
+ .alert {
+    font-size: larger;
+    /* height: 30px; */
+ }
