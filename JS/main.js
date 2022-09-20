@@ -3,37 +3,8 @@
 * contains all the code used in the assignment *
 * **********************************************/
 
-const serverURL = "http://localhost:5050/fibonacci/";
-const resultsHistoryURL = "http://localhost:5050/getFibonacciResults"
-
-window.onload = () => {
-    init();
-}
-
-async function init() {
-    document.getElementById("input-box").addEventListener("change", resetForm);
-
-    let calcForm = document.getElementById("calc-form");
-    calcForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        let input = document.getElementById("input-box").value;
-        input = parseFloat(input);  
-
-        if (isInputNumValid(input)) {
-            input = parseInt(input);
-            showFibonacci(input);
-        } else {
-            if (input > 50) {
-                setAlertOn("Can't be larger than 50");
-            } else {
-                showAsError("not valid input");
-            }
-        }  
-    });
-
-    refreshHistory();
-    
-}
+let resultsHistory = null;
+let calculatorForm= null;
 
 class LoadingSpinner {  
     constructor(idName) {
@@ -46,60 +17,237 @@ class LoadingSpinner {
         document.getElementById(this.elementID).classList.add("invisible");
     }
 }
-const LoadingSpinnerOnFetchResult = new LoadingSpinner("loading-result");
-const LoadingSpinnerOnFetchHistory = new LoadingSpinner("loading-history");
 
-class LoggedCalcRecord {
-    constructor(logFromServer) {
-        this.number = logFromServer.number;
-        this.result = logFromServer.result;
-        this.createdDate = new Date(logFromServer.createdDate);
-        this.id = logFromServer._id;
-        this.addToPage();
+class ResultsHistory {
+    constructor(properties) {
+        this.mainDiv = properties.mainDiv;
+        this.url = properties.url;
+        this.alertDiv = properties.alertDiv;
+        this.loadingSpinner = properties.loadingSpinner;
+        this.selectBox = properties.selectBox;
+        this.detailsModal = properties.detailsModal;
+        this.modalSpan = properties.modalSpan;
+	    this.resultLogsFromServer = [];
+        this.resultLogElements = [];
+
+        this.selectBox.addEventListener("change", (event) => {
+            console.log('select box=', this.selectBox.value);
+            this.sort(this.selectBox.value);
+            this.clear();
+            this.showAll();   
+        });
+        
+        document.getElementById("filter-selected").addEventListener("change", (event) => {
+            if (event.target.value === "") {
+                document.getElementById("filter-label").classList.add("invisible");
+                document.getElementById("filter-input").classList.add("invisible");
+                document.getElementById("filter-btn").classList.add("invisible");
+            } else {
+                document.getElementById("filter-label").classList.remove("invisible");
+                document.getElementById("filter-input").classList.remove("invisible");
+                document.getElementById("filter-btn").classList.remove("invisible");
+            }
+        });
+
+        document.getElementById("filter-btn").addEventListener("click", (event) => {
+            const filterBy = document.getElementById("filter-selected").value;
+            const filterValue = document.getElementById("filter-input").value;
+            this.filter(filterBy, filterValue);
+        });
+
+        this.refresh();
+        this.initDetailsModal();
+    }
+
+    async refresh() {
+	try {
+	    this.mainDiv.classList.add('invisible');  
+	    this.turnOffErrorAlert();
+        this.loadingSpinner.turnOn();      
+	    await this.getData(this.url);
+        this.sort(this.selectBox.value);
+        this.clear();
+        this.showAll();
+	} catch(err) {
+	    this.turnOnErrorAlert("Error in refresh...");
+            console.log(err);
+ 	} finally {
+            this.loadingSpinner.turnOff();
+            this.mainDiv.classList.remove('invisible');
+        }
+    }    
+
+    showAll() {
+        this.resultLogsFromServer.forEach((logObjectFromServer, index) => {
+            this.resultLogElements[index] = new ResultLogElement(logObjectFromServer);
+            // console.log('sorted elements:', this.resultLogElements);
+            this.resultLogElements[index].addToPage();
+        });
+    }
+
+    sort(sortBy) {
+        switch(sortBy) {
+        case "by-num-asc":
+            this.resultLogsFromServer = this.resultLogsFromServer.sort(function (a, b) {
+                return a.number - b.number;
+            });
+            break;
+        case "by-num-desc":
+            this.resultLogsFromServer = this.resultLogsFromServer.sort(function (a, b) {
+                    return b.number - a.number;
+                });
+            break;
+        case "by-date-asc":
+            this.resultLogsFromServer = this.resultLogsFromServer.sort(function (a, b) {
+                    return a.createdDate - b.createdDate;
+                });
+            break;
+        case "by-date-desc":
+            this.resultLogsFromServer = this.resultLogsFromServer.sort(function (a, b) {
+                    return b.createdDate - a.createdDate;
+                });
+            break;
+        default:
+        }
+    }
+
+    async getData(url) {
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            this.resultLogsFromServer = data.results;
+        } catch(err) {
+	    this.turnOnErrorAlert("Error loading Data from server");            
+	    console.log(err);    
+        }
+    }
+
+    turnOnErrorAlert(errMessage) {
+        this.alertDiv.innerHTML = errMessage;
+        // console.log('div:', this.alertDiv.getElementsByTagNameNS());
+        this.alertDiv.classList.remove("d-none");
+    }
+
+    turnOffErrorAlert() {
+        this.alertDiv.classList.add("d-none");
+    }
+
+    showItem(index) {
+        console.log(this.resultLogElements[index]);
+    }
+
+    clear() {
+        this.mainDiv.innerHTML = "";
+    }
+
+    sendDeleteRequest(idToDelete) {
+        
+        console.log('delete id=', idToDelete,' was sent!!!');
+        const urlID = serverURL + "/" + idToDelete;
+        console.log(urlID);
+    
+        fetch(urlID, {
+            method: "DELETE",
+            headers: {
+                'Content-type': 'application/json'
+            }
+        })
+        .then((response) => {
+            response.json().then((result) => {
+                console.log(result);
+                location.reload();
+            })
+        })
+        .catch((error) => {
+            console.log(error);
+        })
+    }
+
+    filter(filterBy, value) {
+        const filteredResults = [];
+        let filteredIndex = 0;
+        this.clear();
+        this.resultLogsFromServer.forEach((logObjectFromServer, index) => {
+            if (filterBy === "number") {
+                if (logObjectFromServer.number == value) {
+                    filteredResults[filteredIndex] = new ResultLogElement(logObjectFromServer);
+                    filteredResults[filteredIndex].addToPage();
+                    filteredIndex++;
+                }
+            } else if (filterBy === "result") {
+                if (logObjectFromServer.result == value) {
+                    filteredResults[filteredIndex] = new ResultLogElement(logObjectFromServer);
+                    filteredResults[filteredIndex].addToPage();
+                    filteredIndex++;
+                }
+            } else if (filterBy === "date") {
+                const date = new Date(logObjectFromServer.createdDate);
+                const simpleDate = date.toLocaleDateString();
+                console.log('date', simpleDate);
+                if (simpleDate == value) {
+                    filteredResults[filteredIndex] = new ResultLogElement(logObjectFromServer);
+                    filteredResults[filteredIndex].addToPage();
+                    filteredIndex++;
+                }
+            } else {
+
+            }
+        });
+    }
+
+    initDetailsModal() {
+        this.modalSpan.addEventListener("click", () => {
+            this.detailsModal.classList.add("d-none");
+        });
+        
+        window.addEventListener("click", (event) => {
+            if (event.target == this.detailsModal) {
+                this.detailsModal.classList.add("d-none");
+            }
+        });
+    }
+
+    openDetailsModal(number, result, date) {
+        this.detailsModal.getElementsByClassName("text-primary")[0].innerHTML = `Result Calculation Details for: ${number}`
+        const calcString = calculatorForm.calcFibonacci(number);
+        this.detailsModal.getElementsByClassName("modal-body")[0].innerHTML = `Fibonacci(${number}) = ${calcString}`
+        this.detailsModal.classList.remove("d-none");
+    }
+
+}
+
+
+class ResultLogElement {
+    constructor(logObjectFromServer) {
+        this.number = logObjectFromServer.number;
+        this.result = logObjectFromServer.result;
+        this.createdDate = new Date(logObjectFromServer.createdDate);
+        this.id = logObjectFromServer._id;
+	    this.mainDiv = null;
     }
 
     addToPage() {
-        console.log(`adding ${this.result} to page`);
-
         const dateAsString = this.createdDate.toString();
-        console.log('date as string:', dateAsString);
         const logLineTemplate = `
-        <p class="text-decoration-underline" class="col-auto">
+        <p class="text-decoration-underline col-auto log-line">
         The Fibonacci of <b>${this.number}</b> is <b>${this.result}</b>. Calculated at: ${dateAsString}
         </p>
         `;
         
-        const newDiv = document.createElement("div");
-        newDiv.id = "log_" + this.id;
-        newDiv.innerHTML = logLineTemplate;
-        document.getElementById("history-records").appendChild(newDiv);
+        this.mainDiv = document.createElement("div");
+        this.mainDiv.id = "log_" + this.id;
+        this.mainDiv.innerHTML = logLineTemplate;
+        this.mainDiv.addEventListener("click", (event) => {
+            resultsHistory.openDetailsModal(this.number, this.result, this.createdDate);
+        });
+        document.getElementById("history-records").appendChild(this.mainDiv);
+
     }
 
     removeFromPage() {
         console.log('remove log line!');
     }
-}
 
-
-function resetForm() {
-    document.getElementById("result-label").classList.remove("text-danger");
-    document.getElementById("result-label").classList.add("result-label");
-    document.getElementById("result-label").innerHTML = "";
-    setAlertOff();
-    LoadingSpinnerOnFetchResult.turnOff();
-    document.getElementById("error-loading").classList.add("d-none");
-}
-
-function setAlertOff() {
-    document.getElementById("alert").innerHTML = "";
-    document.getElementById("input-box").classList.remove("is-invalid");
-    document.getElementById("alert").classList.add("invisible");
-}
-
-function setAlertOn(alertText) {
-    document.getElementById("alert").innerHTML = alertText;
-    document.getElementById("input-box").classList.add("is-invalid");
-    document.getElementById("alert").classList.remove("invisible");
 }
 
 
@@ -112,86 +260,172 @@ function isInputNumValid(numberToCheck) {
     }
 }
 
-async function showFibonacci(term) {
-    try {
-        LoadingSpinnerOnFetchResult.turnOn();
-        
-        const fiboResult = await getFiboFromServer(serverURL + term);
-        if (typeof fiboResult === "number") {
-            showAsResult(fiboResult);
-            refreshHistory();
-        } else if (typeof fiboResult === "string") {
-            showAsError(fiboResult);
-        } else {
-            throw new Error("Undefined Output");
-        }
-    } catch(err) {
-        showAsError(err);
-    } finally {
-        LoadingSpinnerOnFetchResult.turnOff();
-    }
-}
+class CalculatorForm {
+    constructor(properties) {
+        this.mainDiv = properties.mainDiv;
+        this.loadingSpinner = properties.loadingSpinner;
+        this.url = properties.url;
+        this.inputBox = properties.inputBox;
+        this.resultLabel = properties.resultLabel;
+        this.alertDiv = properties.alertDiv;
+        this.saveCheckbox = properties.saveCheckbox;
 
-async function getFiboFromServer(url) {
-    try {
-        const response = await fetch(url);
-        
-        if (response.status === 400) { 
-            const result = await response.text();
-            throw new Error("Server Error: " + result);
-        } else if (response.status === 200) {                                   
-            const result = await response.json();
-            return result.result;
-        }
-    } catch(err) {
-        return err.message;
-    }
-}
-
-function showAsError(newContent) {
-    document.getElementById("result-label").classList.add("text-danger");
-    document.getElementById("result-label").classList.remove("result-label");
-    document.getElementById("result-label").innerHTML = newContent;
-}
-
-function showAsResult(newContent) {
-    document.getElementById("result-label").classList.remove("text-danger");
-    document.getElementById("result-label").classList.add("result-label");
-    document.getElementById("result-label").innerHTML = newContent;
-}
-
-async function refreshHistory() {
-    try {
-        document.getElementById('history-records').classList.add('invisible');
-        LoadingSpinnerOnFetchHistory.turnOn();
-        const allPreviousResults = await getResultsHistory(resultsHistoryURL);
-        // console.log('all results:', allPreviousResults);
-        // console.log('1st result:', allPreviousResults[0]);
-        
-        allPreviousResults.forEach((logElement) => {
-            console.log(logElement);
-            const loggedCalcRecord = new LoggedCalcRecord(logElement);
+        this.inputBox.addEventListener("change", (event) => {
+            this.reset();
         });
+        
 
-    } catch(err) {
-        document.getElementById("error-loading").classList.remove("d-none");
-        console.log(err);
-    } finally {
-        LoadingSpinnerOnFetchHistory.turnOff();
-        document.getElementById('history-records').classList.remove('invisible');
+        this.mainDiv.addEventListener('submit', (event) => {
+            event.preventDefault();
+            let input = this.inputBox.value;
+            input = parseFloat(input);  
+    
+            if (isInputNumValid(input)) {
+                input = parseInt(input);
+                if (this.saveCheckbox.checked) {
+                    this.showFibonacci(input);
+                } else {
+                    this.calcFibonacci(input);
+                }
+            } else {
+                if (input > 50) {
+                    this.turnOnAlert("Can't be larger than 50");
+                } else {
+                    this.showAsError("not valid input");
+                }
+            }  
+        });
+    }
+
+    reset() {
+        this.resultLabel.classList.remove("text-danger");
+        this.resultLabel.classList.add("result-label");
+        this.resultLabel.innerHTML = "";
+        this.turnOffAlert();
+        resultsHistory.loadingSpinner.turnOff();
+    }
+
+    turnOnAlert(errorMessage) {
+        this.alertDiv.innerHTML = errorMessage;
+        this.inputBox.classList.add("is-invalid");
+        this.alertDiv.classList.remove("d-none");
+    }
+
+    turnOffAlert() {
+        this.alertDiv.innerHTML = "";
+        this.inputBox.classList.remove("is-invalid");
+        this.alertDiv.classList.add("d-none");
+    }
+
+    async showFibonacci(term) {
+        try {
+            this.loadingSpinner.turnOn();
+            
+            const fiboResult = await this.getFiboFromServer(this.url + term);
+            if (typeof fiboResult === "number") {
+                this.showAsResult(fiboResult);
+                resultsHistory.refresh();
+            } else if (typeof fiboResult === "string") {
+                this.showAsError(fiboResult);
+            } else {
+                throw new Error("Undefined Output");
+            }
+        } catch(err) {
+            showAsError(err);
+        } finally {
+            this.loadingSpinner.turnOff();
+        }
+    }
+
+    async getFiboFromServer(url) {
+        try {
+            const response = await fetch(url);
+            
+            if (response.status === 400) { 
+                const result = await response.text();
+                throw new Error("Server Error: " + result);
+            } else if (response.status === 200) {                                   
+                const result = await response.json();
+                return result.result;
+            }
+        } catch(err) {
+            return err.message;
+        }
+    }
+
+    showAsError(newContent) {
+        this.resultLabel.classList.add("text-danger");
+        this.resultLabel.classList.remove("result-label");
+        this.resultLabel.innerHTML = newContent;
     }
     
-}
+    showAsResult(newContent) {
+        this.resultLabel.classList.remove("text-danger");
+        this.resultLabel.classList.add("result-label");
+        this.resultLabel.innerHTML = newContent;
+    }
 
-async function getResultsHistory(url) {
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-        return data.results;
-    } catch(err) {
-        console.log(err);
-        return err;
+    calcFibonacci (num) {
+        let calculationStr = "";
+        const fisrtItem = 1;
+        const secondItem = 1;
+        let previousNum = 0;
+        let result = 0;
+        let newResult = 0;
+    
+        for (let index=1; index <= num; index++) {
+            if (index === 1) {
+                result = fisrtItem;
+                previousNum = fisrtItem;
+            } else if (index === 2) {
+                result = secondItem;
+                previousNum = secondItem;
+            } else {
+                newResult = previousNum + result;
+                if (index === num) {
+                    calculationStr = `${previousNum}(${index-2}) + ${result}(${index-1}) = ${newResult}`;
+                }
+                previousNum = result;
+                result = newResult;
+            }
+        }
+        if (num === 1) {
+            calculationStr = "1";
+        } else if (num === 2) {
+            calculationStr = "0 + 1 = 1";
+        }
+        this.showAsResult(result);
+        return calculationStr;
     }
 }
 
 
+
+window.onload = () => {
+    init();  
+}
+
+async function init() {
+	const resultHistoryProperties = {
+    		mainDiv: document.getElementById("history-records"),
+    		loadingSpinner: new LoadingSpinner("loading-history"),
+    		alertDiv: document.getElementById("error-loading"),
+    		url: "http://localhost:5050/getFibonacciResults",
+    		selectBox: document.getElementById("sort-select"),
+            detailsModal: document.getElementById("details-modal"),
+            modalSpan: document.getElementsByClassName("close-custom")[0]
+	};
+
+	const calculatorFormProperties = {
+    		mainDiv: document.getElementById("calc-form"),
+    		loadingSpinner: new LoadingSpinner("loading-result"),
+    		url: "http://localhost:5050/fibonacci/",
+    		inputBox: document.getElementById("input-box"),
+    		resultLabel: document.getElementById("result-label"),
+    		alertDiv: document.getElementById("alert"),
+    		saveCheckbox: document.getElementById("save-calc-checkbox")
+	};   
+
+    resultsHistory = new ResultsHistory(resultHistoryProperties);
+    calculatorForm = new CalculatorForm(calculatorFormProperties);
+}
